@@ -1,0 +1,27 @@
+# Database files
+*.db
+rentflow.db
+backend/rentflow.db
+
+# Virtual environments
+venv/
+.venv/
+backend/venv/
+backend/.venv/
+
+# Node dependencies & build output
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# Python cache & logs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Environment configuration
+.env
+.env.local
