@@ -1,16 +1,18 @@
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import Dashboard from "./pages/Dashboard";
-import Properties from "./pages/Properties";
-import Tenants from "./pages/Tenants";
-import Payments from "./pages/Payments";
-import Utilities from "./pages/Utilities";
-import Reports from "./pages/Reports";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotificationCenter from "./components/NotificationCenter";
 import { useAuth } from "./context/AuthContext";
+
+// Lazy-loaded page routes for performance code-splitting
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Properties = lazy(() => import("./pages/Properties"));
+const Tenants = lazy(() => import("./pages/Tenants"));
+const Payments = lazy(() => import("./pages/Payments"));
+const Utilities = lazy(() => import("./pages/Utilities"));
+const Reports = lazy(() => import("./pages/Reports"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
 import {
   LayoutDashboard,
   Building2,
@@ -25,6 +27,34 @@ import {
   Home,
 } from "lucide-react";
 import "./App.css";
+
+function PageLoader() {
+  return (
+    <div
+      style={{
+        minHeight: "50vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        gap: "14px",
+        color: "#64748b",
+      }}
+    >
+      <div
+        className="spinner"
+        style={{
+          width: "32px",
+          height: "32px",
+          border: "3px solid #e2e8f0",
+          borderTopColor: "#2563eb",
+          borderRadius: "50%",
+        }}
+      />
+      <span style={{ fontSize: "14px", fontWeight: "500" }}>Loading module...</span>
+    </div>
+  );
+}
 
 function NotFound() {
   const navigate = useNavigate();
@@ -215,82 +245,84 @@ function App() {
 
       {/* Main Content Viewport */}
       <main className={`main-content ${isAuthenticated ? "authenticated" : "unauthenticated"}`}>
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/properties"
-            element={
-              <ProtectedRoute>
-                <Properties />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/tenants"
-            element={
-              <ProtectedRoute>
-                <Tenants />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/payments"
-            element={
-              <ProtectedRoute>
-                <Payments />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/utilities"
-            element={
-              <ProtectedRoute>
-                <Utilities />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/reports"
-            element={
-              <ProtectedRoute>
-                <Reports />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/login"
-            element={
-              <Login
-                onLoginSuccess={() => navigate("/dashboard")}
-                onNavigateToRegister={() => navigate("/register")}
-              />
-            }
-          />
-          <Route
-            path="/register"
-            element={
-              <Register
-                onNavigateToLogin={() => navigate("/login")}
-              />
-            }
-          />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/properties"
+              element={
+                <ProtectedRoute>
+                  <Properties />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tenants"
+              element={
+                <ProtectedRoute>
+                  <Tenants />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/payments"
+              element={
+                <ProtectedRoute>
+                  <Payments />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/utilities"
+              element={
+                <ProtectedRoute>
+                  <Utilities />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/reports"
+              element={
+                <ProtectedRoute>
+                  <Reports />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/login"
+              element={
+                <Login
+                  onLoginSuccess={() => navigate("/dashboard")}
+                  onNavigateToRegister={() => navigate("/register")}
+                />
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <Register
+                  onNavigateToLogin={() => navigate("/login")}
+                />
+              }
+            />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );
