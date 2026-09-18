@@ -2,16 +2,17 @@ import calendar
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Payment, Tenant
+from ..models import Payment, Tenant, Property, User
 from ..schemas import (
     PaymentCreate,
     PaymentResponse,
     MonthlyRentGenerateRequest,
 )
+from ..security import get_current_user
 
 router = APIRouter(
     prefix="/payments",
@@ -43,7 +44,8 @@ def calculate_due_date(year: int, month: int, rent_due_day: int) -> date:
 )
 def generate_monthly_rent(
     data: MonthlyRentGenerateRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     if data.month < 1 or data.month > 12:
         raise HTTPException(
@@ -57,7 +59,14 @@ def generate_monthly_rent(
         )
 
     billing_month_date = date(data.year, data.month, 1)
-    tenants = db.query(Tenant).all()
+
+    # Filter tenants belonging to current_user through Property
+    tenants = (
+        db.query(Tenant)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(Property.user_id == current_user.id)
+        .all()
+    )
 
     created_records = []
     skipped_records = []
@@ -82,7 +91,7 @@ def generate_monthly_rent(
             continue
 
         due_date = calculate_due_date(data.year, data.month, tenant.rent_due_day)
-        status = calculate_status(due_date, None)
+        status_val = calculate_status(due_date, None)
 
         new_payment = Payment(
             tenant_id=tenant.id,
@@ -90,7 +99,7 @@ def generate_monthly_rent(
             amount=tenant.rent_amount,
             due_date=due_date,
             billing_month=billing_month_date,
-            status=status
+            status=status_val
         )
         db.add(new_payment)
         created_records.append({
@@ -98,7 +107,7 @@ def generate_monthly_rent(
             "tenant_name": tenant.name,
             "amount": tenant.rent_amount,
             "due_date": str(due_date),
-            "status": status
+            "status": status_val
         })
 
     db.commit()
@@ -115,24 +124,28 @@ def generate_monthly_rent(
 
 @router.post(
     "/",
-    response_model=PaymentResponse
+    response_model=PaymentResponse,
+    status_code=status.HTTP_201_CREATED
 )
 def create_payment(
     payment_data: PaymentCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-
+    # Verify tenant exists and belongs to a property owned by current_user
     tenant = (
         db.query(Tenant)
+        .join(Property, Tenant.property_id == Property.id)
         .filter(
-            Tenant.id == payment_data.tenant_id
+            Tenant.id == payment_data.tenant_id,
+            Property.user_id == current_user.id
         )
         .first()
     )
 
     if not tenant:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Tenant not found"
         )
 
@@ -148,11 +161,11 @@ def create_payment(
         )
         if existing_payment:
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"A monthly rent record already exists for this tenant for month {payment_data.billing_month}"
             )
 
-    status = calculate_status(
+    status_val = calculate_status(
         payment_data.due_date,
         payment_data.payment_date
     )
@@ -164,7 +177,7 @@ def create_payment(
         due_date=payment_data.due_date,
         billing_month=payment_data.billing_month,
         payment_date=payment_data.payment_date,
-        status=status,
+        status=status_val,
         payment_method=payment_data.payment_method,
         reference=payment_data.reference
     )
@@ -181,11 +194,17 @@ def create_payment(
     response_model=list[PaymentResponse]
 )
 def get_payments(
-    billing_month: Optional[str] = None,
-    db: Session = Depends(get_db)
+    billing_month: Optional[date] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-
-    query = db.query(Payment)
+    # Return ONLY payments belonging to tenants whose property belongs to current_user
+    query = (
+        db.query(Payment)
+        .join(Tenant, Payment.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(Property.user_id == current_user.id)
+    )
 
     if billing_month:
         query = query.filter(Payment.billing_month == billing_month)
@@ -194,7 +213,6 @@ def get_payments(
 
     # Recalculate status
     for payment in payments:
-
         payment.status = calculate_status(
             payment.due_date,
             payment.payment_date
@@ -211,18 +229,23 @@ def get_payments(
 )
 def get_payment(
     payment_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-
     payment = (
         db.query(Payment)
-        .filter(Payment.id == payment_id)
+        .join(Tenant, Payment.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(
+            Payment.id == payment_id,
+            Property.user_id == current_user.id
+        )
         .first()
     )
 
     if not payment:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Payment not found"
         )
 
@@ -236,19 +259,33 @@ def get_payment(
     return payment
 
 
+@router.post(
+    "/{payment_id}/pay",
+    response_model=PaymentResponse
+)
 @router.put(
     "/{payment_id}/pay",
     response_model=PaymentResponse
 )
 def mark_payment_paid(
     payment_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    payment = db.query(Payment).filter(Payment.id == payment_id).first()
+    payment = (
+        db.query(Payment)
+        .join(Tenant, Payment.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(
+            Payment.id == payment_id,
+            Property.user_id == current_user.id
+        )
+        .first()
+    )
 
     if not payment:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Payment not found"
         )
 
@@ -264,17 +301,23 @@ def mark_payment_paid(
 @router.delete("/{payment_id}")
 def delete_payment(
     payment_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     payment = (
         db.query(Payment)
-        .filter(Payment.id == payment_id)
+        .join(Tenant, Payment.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(
+            Payment.id == payment_id,
+            Property.user_id == current_user.id
+        )
         .first()
     )
 
     if not payment:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Payment not found"
         )
 
@@ -290,29 +333,39 @@ def delete_payment(
 def update_payment(
     payment_id: int,
     payment_data: PaymentCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     payment = (
         db.query(Payment)
-        .filter(Payment.id == payment_id)
+        .join(Tenant, Payment.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(
+            Payment.id == payment_id,
+            Property.user_id == current_user.id
+        )
         .first()
     )
 
     if not payment:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Payment not found"
         )
 
-    tenant = (
+    target_tenant = (
         db.query(Tenant)
-        .filter(Tenant.id == payment_data.tenant_id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(
+            Tenant.id == payment_data.tenant_id,
+            Property.user_id == current_user.id
+        )
         .first()
     )
 
-    if not tenant:
+    if not target_tenant:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Tenant not found"
         )
 

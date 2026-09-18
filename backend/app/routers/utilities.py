@@ -1,14 +1,15 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import UtilityBill, Tenant
+from ..models import UtilityBill, Tenant, Property, User
 from ..schemas import (
     UtilityBillCreate,
     UtilityBillResponse
 )
+from ..security import get_current_user
 
 router = APIRouter(
     prefix="/utilities",
@@ -31,28 +32,32 @@ def calculate_status(
 
 @router.post(
     "/",
-    response_model=UtilityBillResponse
+    response_model=UtilityBillResponse,
+    status_code=status.HTTP_201_CREATED
 )
 def create_utility_bill(
     bill_data: UtilityBillCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-
+    # Verify tenant exists and belongs to a property owned by current_user
     tenant = (
         db.query(Tenant)
+        .join(Property, Tenant.property_id == Property.id)
         .filter(
-            Tenant.id == bill_data.tenant_id
+            Tenant.id == bill_data.tenant_id,
+            Property.user_id == current_user.id
         )
         .first()
     )
 
     if not tenant:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Tenant not found"
         )
 
-    status = calculate_status(
+    status_val = calculate_status(
         bill_data.due_date,
         bill_data.payment_date
     )
@@ -64,7 +69,7 @@ def create_utility_bill(
         amount=bill_data.amount,
         due_date=bill_data.due_date,
         payment_date=bill_data.payment_date,
-        status=status,
+        status=status_val,
         notes=bill_data.notes
     )
 
@@ -80,10 +85,17 @@ def create_utility_bill(
     response_model=list[UtilityBillResponse]
 )
 def get_utility_bills(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-
-    bills = db.query(UtilityBill).all()
+    # Return ONLY utility bills belonging to tenants whose property belongs to current_user
+    bills = (
+        db.query(UtilityBill)
+        .join(Tenant, UtilityBill.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(Property.user_id == current_user.id)
+        .all()
+    )
 
     for bill in bills:
         bill.status = calculate_status(
@@ -102,20 +114,23 @@ def get_utility_bills(
 )
 def get_utility_bill(
     bill_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-
     bill = (
         db.query(UtilityBill)
+        .join(Tenant, UtilityBill.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
         .filter(
-            UtilityBill.id == bill_id
+            UtilityBill.id == bill_id,
+            Property.user_id == current_user.id
         )
         .first()
     )
 
     if not bill:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Utility bill not found"
         )
 
@@ -129,19 +144,33 @@ def get_utility_bill(
     return bill
 
 
+@router.post(
+    "/{bill_id}/pay",
+    response_model=UtilityBillResponse
+)
 @router.put(
     "/{bill_id}/pay",
     response_model=UtilityBillResponse
 )
 def mark_utility_bill_paid(
     bill_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    bill = db.query(UtilityBill).filter(UtilityBill.id == bill_id).first()
+    bill = (
+        db.query(UtilityBill)
+        .join(Tenant, UtilityBill.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(
+            UtilityBill.id == bill_id,
+            Property.user_id == current_user.id
+        )
+        .first()
+    )
 
     if not bill:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Utility bill not found"
         )
 
@@ -157,17 +186,23 @@ def mark_utility_bill_paid(
 @router.delete("/{bill_id}")
 def delete_utility_bill(
     bill_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     bill = (
         db.query(UtilityBill)
-        .filter(UtilityBill.id == bill_id)
+        .join(Tenant, UtilityBill.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(
+            UtilityBill.id == bill_id,
+            Property.user_id == current_user.id
+        )
         .first()
     )
 
     if not bill:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Utility bill not found"
         )
 
@@ -183,29 +218,39 @@ def delete_utility_bill(
 def update_utility_bill(
     bill_id: int,
     bill_data: UtilityBillCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     bill = (
         db.query(UtilityBill)
-        .filter(UtilityBill.id == bill_id)
+        .join(Tenant, UtilityBill.tenant_id == Tenant.id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(
+            UtilityBill.id == bill_id,
+            Property.user_id == current_user.id
+        )
         .first()
     )
 
     if not bill:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Utility bill not found"
         )
 
-    tenant = (
+    target_tenant = (
         db.query(Tenant)
-        .filter(Tenant.id == bill_data.tenant_id)
+        .join(Property, Tenant.property_id == Property.id)
+        .filter(
+            Tenant.id == bill_data.tenant_id,
+            Property.user_id == current_user.id
+        )
         .first()
     )
 
-    if not tenant:
+    if not target_tenant:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Tenant not found"
         )
 

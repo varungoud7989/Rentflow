@@ -1,66 +1,297 @@
 import { useState } from "react";
+import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Properties from "./pages/Properties";
 import Tenants from "./pages/Tenants";
 import Payments from "./pages/Payments";
 import Utilities from "./pages/Utilities";
+import Reports from "./pages/Reports";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import ProtectedRoute from "./components/ProtectedRoute";
+import NotificationCenter from "./components/NotificationCenter";
+import { useAuth } from "./context/AuthContext";
+import {
+  LayoutDashboard,
+  Building2,
+  Users,
+  CreditCard,
+  Zap,
+  BarChart3,
+  LogOut,
+  Menu,
+  X,
+  HelpCircle,
+  Home,
+} from "lucide-react";
 import "./App.css";
 
-function App() {
-  const [page, setPage] = useState("dashboard");
+function NotFound() {
+  const navigate = useNavigate();
 
   return (
-    <div className="app">
-
-      <header className="header">
-
-        <div>
-          <h1>🏠 RentFlow</h1>
-          <p>Smart Rental & Utility Management</p>
+    <div className="not-found-container">
+      <div className="not-found-card">
+        <div className="not-found-icon-wrapper">
+          <HelpCircle size={48} />
         </div>
+        <h2>404 - Page Not Found</h2>
+        <p>The page you are looking for doesn't exist or has been moved.</p>
+        <button
+          className="primary-action-button"
+          onClick={() => navigate("/dashboard")}
+        >
+          <Home size={18} />
+          <span>Return to Dashboard</span>
+        </button>
+      </div>
+    </div>
+  );
+}
 
-        <nav>
-          <button onClick={() => setPage("dashboard")}>
-            Dashboard
-          </button>
+function App() {
+  const { user, isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-          <button onClick={() => setPage("properties")}>
-            Properties
-          </button>
+  const handleLogout = () => {
+    logout();
+    setMobileMenuOpen(false);
+    navigate("/login");
+  };
 
-          <button onClick={() => setPage("tenants")}>
-            Tenants
-          </button>
+  const currentPath = location.pathname;
 
-          <button onClick={() => setPage("payments")}>
-            Payments
-          </button>
+  const isActive = (path) => {
+    if (path === "/dashboard") {
+      return currentPath === "/" || currentPath === "/dashboard";
+    }
+    return currentPath === path;
+  };
 
-          <button onClick={() => setPage("utilities")}>
-            Utilities
-          </button>
-        </nav>
+  const navItems = [
+    { label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+    { label: "Properties", path: "/properties", icon: Building2 },
+    { label: "Tenants", path: "/tenants", icon: Users },
+    { label: "Payments", path: "/payments", icon: CreditCard },
+    { label: "Utilities", path: "/utilities", icon: Zap },
+    { label: "Reports", path: "/reports", icon: BarChart3 },
+  ];
 
-      </header>
+  const userInitial = (user?.name || user?.email || "U").charAt(0).toUpperCase();
 
-      {page === "dashboard" && <Dashboard />}
+  return (
+    <div className="app-shell">
+      {/* Shell Header & Sidebar for Authenticated Users */}
+      {isAuthenticated && (
+        <>
+          {/* Mobile Navigation Header */}
+          <header className="mobile-header">
+            <div className="brand-logo-group" onClick={() => navigate("/dashboard")}>
+              <div className="brand-icon-pill">
+                <Building2 size={20} />
+              </div>
+              <div className="brand-text">
+                <span className="brand-name">RentFlow</span>
+              </div>
+            </div>
 
-      {page === "properties" && (
-        <Properties />
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <NotificationCenter />
+              <button
+                className="mobile-menu-btn"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+                aria-expanded={mobileMenuOpen}
+              >
+                {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+              </button>
+            </div>
+          </header>
+
+          {/* Mobile Navigation Drawer / Dropdown */}
+          {mobileMenuOpen && (
+            <div className="mobile-nav-drawer">
+              <nav className="mobile-nav-list" aria-label="Mobile Navigation">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.path);
+
+                  return (
+                    <button
+                      key={item.path}
+                      className={`mobile-nav-item ${active ? "active" : ""}`}
+                      onClick={() => {
+                        navigate(item.path);
+                        setMobileMenuOpen(false);
+                      }}
+                    >
+                      <Icon size={20} />
+                      <span>{item.label}</span>
+                      {active && <span className="active-dot" aria-hidden="true" />}
+                    </button>
+                  );
+                })}
+              </nav>
+
+              <div className="mobile-user-footer">
+                <div className="user-profile-badge">
+                  <div className="user-avatar">{userInitial}</div>
+                  <div className="user-details">
+                    <span className="user-name">{user?.name || "RentFlow Landlord"}</span>
+                    <span className="user-email">{user?.email}</span>
+                  </div>
+                </div>
+
+                <button className="logout-btn" onClick={handleLogout}>
+                  <LogOut size={18} />
+                  <span>Logout</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Desktop Sidebar */}
+          <aside className="desktop-sidebar" aria-label="Sidebar Navigation">
+            <div className="sidebar-brand-wrapper">
+              <div className="sidebar-brand" onClick={() => navigate("/dashboard")}>
+                <div className="brand-icon-pill">
+                  <Building2 size={24} />
+                </div>
+                <div className="brand-text">
+                  <span className="brand-name">RentFlow</span>
+                  <span className="brand-tagline">Smart Rental & Utility</span>
+                </div>
+              </div>
+
+              <NotificationCenter className="sidebar-anchored" />
+            </div>
+
+            <nav className="sidebar-nav" aria-label="Main Navigation">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.path);
+
+                return (
+                  <button
+                    key={item.path}
+                    className={`sidebar-nav-item ${active ? "active" : ""}`}
+                    onClick={() => navigate(item.path)}
+                  >
+                    <div className="nav-item-indicator" aria-hidden="true" />
+                    <Icon size={20} className="nav-icon" />
+                    <span className="nav-label">{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="sidebar-footer">
+              <div className="user-profile-card">
+                <div className="user-avatar">{userInitial}</div>
+                <div className="user-info">
+                  <span className="user-name" title={user?.name || "RentFlow Landlord"}>
+                    {user?.name || "RentFlow Landlord"}
+                  </span>
+                  <span className="user-email" title={user?.email}>
+                    {user?.email}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                className="logout-button-full"
+                onClick={handleLogout}
+                aria-label="Logout of RentFlow"
+              >
+                <LogOut size={18} />
+                <span>Logout</span>
+              </button>
+            </div>
+          </aside>
+        </>
       )}
 
-      {page === "tenants" && (
-        <Tenants />
-      )}
-
-      {page === "payments" && (
-        <Payments />
-      )}
-
-      {page === "utilities" && (
-        <Utilities />
-      )}
-
+      {/* Main Content Viewport */}
+      <main className={`main-content ${isAuthenticated ? "authenticated" : "unauthenticated"}`}>
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/properties"
+            element={
+              <ProtectedRoute>
+                <Properties />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tenants"
+            element={
+              <ProtectedRoute>
+                <Tenants />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payments"
+            element={
+              <ProtectedRoute>
+                <Payments />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/utilities"
+            element={
+              <ProtectedRoute>
+                <Utilities />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute>
+                <Reports />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/login"
+            element={
+              <Login
+                onLoginSuccess={() => navigate("/dashboard")}
+                onNavigateToRegister={() => navigate("/register")}
+              />
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <Register
+                onNavigateToLogin={() => navigate("/login")}
+              />
+            }
+          />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </main>
     </div>
   );
 }

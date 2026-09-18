@@ -1,6 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 
 class PropertyCreate(BaseModel):
     name: str
@@ -14,9 +14,11 @@ class PropertyResponse(BaseModel):
     address: str
     unit_number: Optional[str]
     monthly_rent: float
+    user_id: Optional[int] = None
 
     class Config:
         from_attributes = True
+
 
 class TenantCreate(BaseModel):
     name: str
@@ -89,3 +91,62 @@ class UtilityBillResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class UserRegister(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name is required and cannot be empty.")
+        return v
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Password is required and cannot be empty.")
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters long.")
+        return v
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("Password is required and cannot be empty.")
+        return v
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+

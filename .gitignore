@@ -1,7 +1,9 @@
 # Database files
 *.db
+*.bak_*
 rentflow.db
 backend/rentflow.db
+
 
 # Virtual environments
 venv/
@@ -24,4 +26,9 @@ __pycache__/
 
 # Environment configuration
 .env
+*.env
+backend/.env
 .env.local
+
+# Temporary scratch scripts
+scratch/

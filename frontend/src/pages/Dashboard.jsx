@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "../api/client";
+import { getApiErrorMessage } from "../utils/apiError";
+import { formatCurrency } from "../utils/currency";
+import { useAuth } from "../context/AuthContext";
 import {
   ResponsiveContainer,
   PieChart,
@@ -13,6 +16,22 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
+import {
+  Building2,
+  Users,
+  CreditCard,
+  Zap,
+  TrendingUp,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  Calendar,
+  Filter,
+  Activity,
+  ArrowUpRight,
+  FileText,
+} from "lucide-react";
+import "./Dashboard.css";
 
 const RENT_COLORS = {
   Paid: "#16a34a",
@@ -27,15 +46,19 @@ const UTILITY_COLORS = {
 };
 
 function Dashboard() {
+  const { user } = useAuth();
   const [properties, setProperties] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [payments, setPayments] = useState([]);
   const [utilities, setUtilities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("all");
 
   useEffect(() => {
     const fetchDashboardData = async () => {
+      setLoading(true);
+      setError("");
       try {
         const [
           propertiesResponse,
@@ -43,18 +66,18 @@ function Dashboard() {
           paymentsResponse,
           utilitiesResponse,
         ] = await Promise.all([
-          axios.get("http://127.0.0.1:8000/properties/"),
-          axios.get("http://127.0.0.1:8000/tenants/"),
-          axios.get("http://127.0.0.1:8000/payments/"),
-          axios.get("http://127.0.0.1:8000/utilities/"),
+          api.get("/properties/"),
+          api.get("/tenants/"),
+          api.get("/payments/"),
+          api.get("/utilities/"),
         ]);
 
-        setProperties(propertiesResponse.data);
-        setTenants(tenantsResponse.data);
-        setPayments(paymentsResponse.data);
-        setUtilities(utilitiesResponse.data);
-      } catch (error) {
-        console.error("Dashboard error:", error);
+        setProperties(propertiesResponse.data || []);
+        setTenants(tenantsResponse.data || []);
+        setPayments(paymentsResponse.data || []);
+        setUtilities(utilitiesResponse.data || []);
+      } catch (err) {
+        setError(getApiErrorMessage(err, "Failed to load dashboard data."));
       } finally {
         setLoading(false);
       }
@@ -63,6 +86,18 @@ function Dashboard() {
     fetchDashboardData();
   }, []);
 
+  // Helper map for Tenant names
+  const getTenantName = (tenantId) => {
+    const t = tenants.find((item) => item.id === tenantId);
+    return t ? t.name : `Tenant #${tenantId}`;
+  };
+
+  // Helper map for Property names
+  const getPropertyName = (propertyId) => {
+    const p = properties.find((item) => item.id === propertyId);
+    return p ? p.name : `Property #${propertyId}`;
+  };
+
   // Extract unique billing months for filter dropdown
   const availableMonths = Array.from(
     new Set(
@@ -70,87 +105,161 @@ function Dashboard() {
         .filter((p) => p.billing_month)
         .map((p) => p.billing_month)
     )
-  ).sort().reverse();
+  )
+    .sort()
+    .reverse();
 
   // Filter payments by selected billing_month
-  const filteredPayments = selectedMonth === "all"
-    ? payments
-    : payments.filter((p) => p.billing_month === selectedMonth);
+  const filteredPayments =
+    selectedMonth === "all"
+      ? payments
+      : payments.filter((p) => p.billing_month === selectedMonth);
 
-  const expectedRent = filteredPayments.reduce((total, p) => total + p.amount, 0);
+  const expectedRent = filteredPayments.reduce(
+    (total, p) => total + (p.amount || 0),
+    0
+  );
 
   const totalRentCollected = filteredPayments
     .filter((payment) => payment.status === "Paid")
-    .reduce((total, payment) => total + payment.amount, 0);
+    .reduce((total, payment) => total + (payment.amount || 0), 0);
 
   const pendingRent = filteredPayments
     .filter((payment) => payment.status === "Pending")
-    .reduce((total, payment) => total + payment.amount, 0);
+    .reduce((total, payment) => total + (payment.amount || 0), 0);
 
   const overdueRent = filteredPayments
     .filter((payment) => payment.status === "Overdue")
-    .reduce((total, payment) => total + payment.amount, 0);
+    .reduce((total, payment) => total + (payment.amount || 0), 0);
 
-  // Utility Bills calculation (Unaffected by month filter)
+  // Utility Bills calculation
   const totalUtilities = utilities.reduce(
-    (total, bill) => total + bill.amount,
+    (total, bill) => total + (bill.amount || 0),
     0
   );
 
   const paidUtilities = utilities
     .filter((bill) => bill.status === "Paid")
-    .reduce((total, bill) => total + bill.amount, 0);
+    .reduce((total, bill) => total + (bill.amount || 0), 0);
 
   const pendingUtilities = utilities
     .filter((bill) => bill.status === "Pending")
-    .reduce((total, bill) => total + bill.amount, 0);
+    .reduce((total, bill) => total + (bill.amount || 0), 0);
 
   const overdueUtilities = utilities
     .filter((bill) => bill.status === "Overdue")
-    .reduce((total, bill) => total + bill.amount, 0);
+    .reduce((total, bill) => total + (bill.amount || 0), 0);
 
-  // Status Counts & Amounts for Charts
+  // Counts for Badges & Charts
   const rentPaidCount = filteredPayments.filter((p) => p.status === "Paid").length;
-  const rentPendingCount = filteredPayments.filter((p) => p.status === "Pending").length;
-  const rentOverdueCount = filteredPayments.filter((p) => p.status === "Overdue").length;
+  const rentPendingCount = filteredPayments.filter(
+    (p) => p.status === "Pending"
+  ).length;
+  const rentOverdueCount = filteredPayments.filter(
+    (p) => p.status === "Overdue"
+  ).length;
 
   const rentPieData = [
-    { name: "Paid", count: rentPaidCount, amount: totalRentCollected, color: RENT_COLORS.Paid },
-    { name: "Pending", count: rentPendingCount, amount: pendingRent, color: RENT_COLORS.Pending },
-    { name: "Overdue", count: rentOverdueCount, amount: overdueRent, color: RENT_COLORS.Overdue },
+    {
+      name: "Paid",
+      count: rentPaidCount,
+      amount: totalRentCollected,
+      color: RENT_COLORS.Paid,
+    },
+    {
+      name: "Pending",
+      count: rentPendingCount,
+      amount: pendingRent,
+      color: RENT_COLORS.Pending,
+    },
+    {
+      name: "Overdue",
+      count: rentOverdueCount,
+      amount: overdueRent,
+      color: RENT_COLORS.Overdue,
+    },
   ].filter((item) => item.count > 0);
 
   const utilityPaidCount = utilities.filter((b) => b.status === "Paid").length;
-  const utilityPendingCount = utilities.filter((b) => b.status === "Pending").length;
-  const utilityOverdueCount = utilities.filter((b) => b.status === "Overdue").length;
+  const utilityPendingCount = utilities.filter(
+    (b) => b.status === "Pending"
+  ).length;
+  const utilityOverdueCount = utilities.filter(
+    (b) => b.status === "Overdue"
+  ).length;
 
   const utilityBarData = [
-    { status: "Paid", count: utilityPaidCount, amount: paidUtilities, fill: UTILITY_COLORS.Paid },
-    { status: "Pending", count: utilityPendingCount, amount: pendingUtilities, fill: UTILITY_COLORS.Pending },
-    { status: "Overdue", count: utilityOverdueCount, amount: overdueUtilities, fill: UTILITY_COLORS.Overdue },
+    {
+      status: "Paid",
+      count: utilityPaidCount,
+      amount: paidUtilities,
+      fill: UTILITY_COLORS.Paid,
+    },
+    {
+      status: "Pending",
+      count: utilityPendingCount,
+      amount: pendingUtilities,
+      fill: UTILITY_COLORS.Pending,
+    },
+    {
+      status: "Overdue",
+      count: utilityOverdueCount,
+      amount: overdueUtilities,
+      fill: UTILITY_COLORS.Overdue,
+    },
   ];
 
-  const formatCurrency = (val) => `₹${val.toLocaleString("en-IN")}`;
-
   const formatMonthOptionLabel = (dateStr) => {
+    if (!dateStr || dateStr === "all") return "All Months";
     const parts = dateStr.split("-");
     if (parts.length >= 2) {
       const year = parts[0];
       const monthNum = parseInt(parts[1], 10);
       const dateObj = new Date(year, monthNum - 1, 1);
-      return dateObj.toLocaleString("en-US", { month: "long", year: "numeric" });
+      return dateObj.toLocaleString("en-US", {
+        month: "long",
+        year: "numeric",
+      });
     }
     return dateStr;
+  };
+
+  const renderStatusBadge = (status) => {
+    if (status === "Paid") {
+      return (
+        <span className="status-badge status-paid">
+          <CheckCircle2 size={12} /> Paid
+        </span>
+      );
+    }
+    if (status === "Overdue") {
+      return (
+        <span className="status-badge status-overdue">
+          <AlertTriangle size={12} /> Overdue
+        </span>
+      );
+    }
+    return (
+      <span className="status-badge status-pending">
+        <Clock size={12} /> Pending
+      </span>
+    );
   };
 
   const CustomPieTooltip = ({ active, payload }) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="custom-chart-tooltip">
-          <p className="tooltip-title">{data.name} Rent</p>
-          <p>Records: <strong>{data.count}</strong></p>
-          <p>Total Amount: <strong>{formatCurrency(data.amount)}</strong></p>
+        <div className="enhanced-chart-tooltip">
+          <div className="tooltip-header">{data.name} Rent</div>
+          <div className="tooltip-row">
+            <span>Records:</span>
+            <strong>{data.count}</strong>
+          </div>
+          <div className="tooltip-row">
+            <span>Total Amount:</span>
+            <strong>{formatCurrency(data.amount)}</strong>
+          </div>
         </div>
       );
     }
@@ -161,10 +270,16 @@ function Dashboard() {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="custom-chart-tooltip">
-          <p className="tooltip-title">{data.status} Utilities</p>
-          <p>Bills: <strong>{data.count}</strong></p>
-          <p>Amount: <strong>{formatCurrency(data.amount)}</strong></p>
+        <div className="enhanced-chart-tooltip">
+          <div className="tooltip-header">{data.status} Utilities</div>
+          <div className="tooltip-row">
+            <span>Bills:</span>
+            <strong>{data.count}</strong>
+          </div>
+          <div className="tooltip-row">
+            <span>Total Amount:</span>
+            <strong>{formatCurrency(data.amount)}</strong>
+          </div>
         </div>
       );
     }
@@ -172,28 +287,32 @@ function Dashboard() {
   };
 
   return (
-    <div className="dashboard">
-      <div className="dashboard-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h1>RentFlow Dashboard</h1>
-          <p>Smart Rental & Utility Management Analytics</p>
+    <div className="dashboard-container">
+      {/* Header Section */}
+      <div className="dashboard-header-wrapper">
+        <div className="dashboard-title-area">
+          <h1>Dashboard</h1>
+          <p className="dashboard-subtitle">
+            <span>
+              Welcome back,{" "}
+              <strong>{user?.name || "RentFlow Demo Landlord"}</strong>
+            </span>
+            <span className="dashboard-user-badge">
+              <Activity size={12} /> Active Manager
+            </span>
+          </p>
         </div>
 
-        {/* Billing Month Filter */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <label style={{ fontWeight: 600, fontSize: "14px", color: "#374151" }}>Billing Month:</label>
+        {/* Filter Controls */}
+        <div className="dashboard-controls">
+          <span className="filter-label">
+            <Filter size={15} /> Billing Month:
+          </span>
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            style={{
-              padding: "8px 14px",
-              borderRadius: "8px",
-              border: "1px solid #d1d5db",
-              fontSize: "14px",
-              background: "#ffffff",
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
+            className="filter-select-enhanced"
+            aria-label="Filter payments by billing month"
           >
             <option value="all">All Months</option>
             {availableMonths.map((m) => (
@@ -205,66 +324,140 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Metric Cards Grid */}
-      <div className="dashboard-cards">
-        <div className="dashboard-card">
-          <h3>Properties</h3>
-          <p className="dashboard-number">{properties.length}</p>
-          <span>Total registered properties</span>
+      {error && (
+        <div className="login-error-banner" style={{ marginBottom: "24px" }}>
+          {error}
         </div>
+      )}
 
-        <div className="dashboard-card">
-          <h3>Tenants</h3>
-          <p className="dashboard-number">{tenants.length}</p>
-          <span>Active tenants</span>
+      {/* Metric Cards Section */}
+      {loading ? (
+        <div className="dashboard-metrics-grid">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skeleton-box skeleton-card" />
+          ))}
         </div>
+      ) : (
+        <div className="dashboard-metrics-grid">
+          {/* Card 1: Rent Collected */}
+          <div className="metric-card-enhanced theme-success">
+            <div className="metric-card-header">
+              <span className="metric-card-title">Rent Collected</span>
+              <div className="metric-icon-bg">
+                <TrendingUp size={18} />
+              </div>
+            </div>
+            <div className="metric-card-value">
+              {formatCurrency(totalRentCollected)}
+            </div>
+            <div className="metric-card-footer">
+              <span>{rentPaidCount} paid record{rentPaidCount !== 1 ? "s" : ""}</span>
+            </div>
+          </div>
 
-        <div className="dashboard-card metric-success">
-          <h3>Rent Collected</h3>
-          <p className="dashboard-number">{formatCurrency(totalRentCollected)}</p>
-          <span>
-            {selectedMonth !== "all" ? formatMonthOptionLabel(selectedMonth) : "Total paid rent"}
-          </span>
+          {/* Card 2: Pending Rent */}
+          <div className="metric-card-enhanced theme-warning">
+            <div className="metric-card-header">
+              <span className="metric-card-title">Pending Rent</span>
+              <div className="metric-icon-bg">
+                <Clock size={18} />
+              </div>
+            </div>
+            <div className="metric-card-value">
+              {formatCurrency(pendingRent)}
+            </div>
+            <div className="metric-card-footer">
+              <span>{rentPendingCount} pending record{rentPendingCount !== 1 ? "s" : ""}</span>
+            </div>
+          </div>
+
+          {/* Card 3: Overdue Rent */}
+          <div className="metric-card-enhanced theme-danger">
+            <div className="metric-card-header">
+              <span className="metric-card-title">Overdue Rent</span>
+              <div className="metric-icon-bg">
+                <AlertTriangle size={18} />
+              </div>
+            </div>
+            <div className="metric-card-value">
+              {formatCurrency(overdueRent)}
+            </div>
+            <div className="metric-card-footer">
+              <span>{rentOverdueCount} overdue record{rentOverdueCount !== 1 ? "s" : ""}</span>
+            </div>
+          </div>
+
+          {/* Card 4: Utility Expenses */}
+          <div className="metric-card-enhanced theme-info">
+            <div className="metric-card-header">
+              <span className="metric-card-title">Utility Expenses</span>
+              <div className="metric-icon-bg">
+                <Zap size={18} />
+              </div>
+            </div>
+            <div className="metric-card-value">
+              {formatCurrency(totalUtilities)}
+            </div>
+            <div className="metric-card-footer">
+              <span>{utilities.length} total utility bill{utilities.length !== 1 ? "s" : ""}</span>
+            </div>
+          </div>
+
+          {/* Card 5: Properties */}
+          <div className="metric-card-enhanced theme-indigo">
+            <div className="metric-card-header">
+              <span className="metric-card-title">Properties</span>
+              <div className="metric-icon-bg">
+                <Building2 size={18} />
+              </div>
+            </div>
+            <div className="metric-card-value">{properties.length}</div>
+            <div className="metric-card-footer">
+              <span>Registered properties</span>
+            </div>
+          </div>
+
+          {/* Card 6: Tenants */}
+          <div className="metric-card-enhanced theme-purple">
+            <div className="metric-card-header">
+              <span className="metric-card-title">Tenants</span>
+              <div className="metric-icon-bg">
+                <Users size={18} />
+              </div>
+            </div>
+            <div className="metric-card-value">{tenants.length}</div>
+            <div className="metric-card-footer">
+              <span>Active tenant profiles</span>
+            </div>
+          </div>
         </div>
+      )}
 
-        <div className="dashboard-card metric-info">
-          <h3>Utility Expenses</h3>
-          <p className="dashboard-number">{formatCurrency(totalUtilities)}</p>
-          <span>Total utility bills recorded</span>
-        </div>
-
-        <div className="dashboard-card metric-warning">
-          <h3>Pending Rent</h3>
-          <p className="dashboard-number">{formatCurrency(pendingRent)}</p>
-          <span>{rentPendingCount} pending payment{rentPendingCount !== 1 ? "s" : ""}</span>
-        </div>
-
-        <div className="dashboard-card metric-danger">
-          <h3>Overdue Rent</h3>
-          <p className="dashboard-number">{formatCurrency(overdueRent)}</p>
-          <span>{rentOverdueCount} overdue payment{rentOverdueCount !== 1 ? "s" : ""}</span>
-        </div>
-      </div>
-
-      {/* Analytics & Charts Section */}
-      <div className="dashboard-charts-container">
-        {/* Rent Payment Breakdown Chart */}
-        <div className="dashboard-chart-card">
-          <div className="chart-card-header">
-            <h2>Rent Payment Breakdown</h2>
-            <p>
-              {selectedMonth !== "all"
-                ? `Rent status distribution for ${formatMonthOptionLabel(selectedMonth)}`
-                : "Distribution of rent payments across all months"}
-            </p>
+      {/* Analytics Charts Section */}
+      <div className="dashboard-charts-grid">
+        {/* Rent Status Donut Chart */}
+        <div className="chart-card-enhanced">
+          <div className="chart-card-title-area">
+            <div>
+              <h2>Rent Payment Breakdown</h2>
+              <p>
+                {selectedMonth !== "all"
+                  ? `Status distribution for ${formatMonthOptionLabel(selectedMonth)}`
+                  : "Overall distribution across all billing months"}
+              </p>
+            </div>
+            <span className="chart-badge">
+              <Calendar size={13} /> {formatMonthOptionLabel(selectedMonth)}
+            </span>
           </div>
 
           {loading ? (
-            <div className="chart-empty-state">Loading chart data...</div>
+            <div className="skeleton-box skeleton-chart" />
           ) : filteredPayments.length === 0 ? (
             <div className="chart-empty-state">
-              <p>No rent payments recorded for this period.</p>
-              <span>Select another month or generate monthly rent.</span>
+              <FileText size={32} style={{ color: "#94a3b8" }} />
+              <p>No rent payments found</p>
+              <span>Select another month or record new rent payments.</span>
             </div>
           ) : (
             <div className="chart-content">
@@ -288,7 +481,13 @@ function Dashboard() {
                     verticalAlign="bottom"
                     height={36}
                     formatter={(value, entry) => (
-                      <span style={{ color: "#374151", fontWeight: 500 }}>
+                      <span
+                        style={{
+                          color: "#334155",
+                          fontWeight: 600,
+                          fontSize: "13px",
+                        }}
+                      >
                         {value} ({entry.payload.count})
                       </span>
                     )}
@@ -299,27 +498,40 @@ function Dashboard() {
           )}
         </div>
 
-        {/* Utility Bills Status Breakdown Chart */}
-        <div className="dashboard-chart-card">
-          <div className="chart-card-header">
-            <h2>Utility Bill Status Breakdown</h2>
-            <p>Overview of paid, pending, and overdue utility bills</p>
+        {/* Utility Bills Status Bar Chart */}
+        <div className="chart-card-enhanced">
+          <div className="chart-card-title-area">
+            <div>
+              <h2>Utility Status Breakdown</h2>
+              <p>Overview of paid, pending, and overdue utility bills</p>
+            </div>
+            <span className="chart-badge">
+              <Zap size={13} /> Utilities
+            </span>
           </div>
 
           {loading ? (
-            <div className="chart-empty-state">Loading chart data...</div>
+            <div className="skeleton-box skeleton-chart" />
           ) : utilities.length === 0 ? (
             <div className="chart-empty-state">
-              <p>No utility bills recorded yet.</p>
+              <Zap size={32} style={{ color: "#94a3b8" }} />
+              <p>No utility bills recorded</p>
               <span>Add utility bills to view status breakdown.</span>
             </div>
           ) : (
             <div className="chart-content">
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={utilityBarData} margin={{ top: 20, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                  <XAxis dataKey="status" tickLine={false} stroke="#6b7280" />
-                  <YAxis allowDecimals={false} tickLine={false} stroke="#6b7280" />
+                <BarChart
+                  data={utilityBarData}
+                  margin={{ top: 20, right: 20, left: 0, bottom: 5 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke="#e2e8f0"
+                  />
+                  <XAxis dataKey="status" tickLine={false} stroke="#64748b" />
+                  <YAxis allowDecimals={false} tickLine={false} stroke="#64748b" />
                   <Tooltip content={<CustomBarTooltip />} />
                   <Bar dataKey="count" radius={[6, 6, 0, 0]}>
                     {utilityBarData.map((entry, index) => (
@@ -333,59 +545,98 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Summary Lists Overview */}
-      <div className="dashboard-section">
-        <div className="dashboard-box">
-          <h2>Payment Overview ({selectedMonth !== "all" ? formatMonthOptionLabel(selectedMonth) : "All Time"})</h2>
-
-          <div className="overview-row">
-            <span>Expected Total Rent</span>
-            <strong>{formatCurrency(expectedRent)}</strong>
+      {/* Recent Activity & Summaries Grid */}
+      <div className="dashboard-activity-grid">
+        {/* Recent Rent Payments Card */}
+        <div className="activity-card-enhanced">
+          <div className="activity-card-header">
+            <h2>Recent Rent Payments</h2>
+            <span className="chart-badge">
+              <CreditCard size={13} /> Total: {formatCurrency(expectedRent)}
+            </span>
           </div>
 
-          <div className="overview-row">
-            <span>Collected Rent</span>
-            <strong className="text-success">{formatCurrency(totalRentCollected)}</strong>
-          </div>
-
-          <div className="overview-row">
-            <span>Pending Rent</span>
-            <strong className="text-warning">{formatCurrency(pendingRent)}</strong>
-          </div>
-
-          <div className="overview-row">
-            <span>Overdue Rent</span>
-            <strong className="text-danger">{formatCurrency(overdueRent)}</strong>
-          </div>
-
-          <div className="overview-row">
-            <span>Total Payment Records</span>
-            <strong>{filteredPayments.length}</strong>
-          </div>
+          {loading ? (
+            <div className="activity-list">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="skeleton-box skeleton-activity-item" />
+              ))}
+            </div>
+          ) : filteredPayments.length === 0 ? (
+            <div className="dashboard-empty-state">
+              <p>No rent payments recorded for this period.</p>
+            </div>
+          ) : (
+            <div className="activity-list">
+              {filteredPayments.slice(0, 5).map((payment) => (
+                <div className="activity-item" key={payment.id}>
+                  <div className="activity-item-main">
+                    <div className="activity-avatar-icon">👤</div>
+                    <div className="activity-details">
+                      <h4>{getTenantName(payment.tenant_id)}</h4>
+                      <p>
+                        {payment.billing_month
+                          ? `Billing: ${payment.billing_month}`
+                          : `Due: ${payment.due_date}`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="activity-item-right">
+                    <span className="activity-amount">
+                      {formatCurrency(payment.amount)}
+                    </span>
+                    {renderStatusBadge(payment.status)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="dashboard-box">
-          <h2>Utility Overview (All Time)</h2>
-
-          <div className="overview-row">
-            <span>Total Billed Utilities</span>
-            <strong>{formatCurrency(totalUtilities)}</strong>
+        {/* Recent Utility Bills Card */}
+        <div className="activity-card-enhanced">
+          <div className="activity-card-header">
+            <h2>Recent Utility Bills</h2>
+            <span className="chart-badge">
+              <Zap size={13} /> Total: {formatCurrency(totalUtilities)}
+            </span>
           </div>
 
-          <div className="overview-row">
-            <span>Paid Utility Bills</span>
-            <strong className="text-success">{utilityPaidCount} ({formatCurrency(paidUtilities)})</strong>
-          </div>
-
-          <div className="overview-row">
-            <span>Pending Utility Bills</span>
-            <strong className="text-warning">{utilityPendingCount} ({formatCurrency(pendingUtilities)})</strong>
-          </div>
-
-          <div className="overview-row">
-            <span>Overdue Utility Bills</span>
-            <strong className="text-danger">{utilityOverdueCount} ({formatCurrency(overdueUtilities)})</strong>
-          </div>
+          {loading ? (
+            <div className="activity-list">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="skeleton-box skeleton-activity-item" />
+              ))}
+            </div>
+          ) : utilities.length === 0 ? (
+            <div className="dashboard-empty-state">
+              <p>No utility bills recorded yet.</p>
+            </div>
+          ) : (
+            <div className="activity-list">
+              {utilities.slice(0, 5).map((bill) => (
+                <div className="activity-item" key={bill.id}>
+                  <div className="activity-item-main">
+                    <div className="activity-avatar-icon">⚡</div>
+                    <div className="activity-details">
+                      <h4>
+                        {bill.utility_type} Bill • {getTenantName(bill.tenant_id)}
+                      </h4>
+                      <p>
+                        Conn: {bill.connection_number || "N/A"} • Due: {bill.due_date}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="activity-item-right">
+                    <span className="activity-amount">
+                      {formatCurrency(bill.amount)}
+                    </span>
+                    {renderStatusBadge(bill.status)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

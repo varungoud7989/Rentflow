@@ -1,3 +1,9 @@
 fastapi
 uvicorn
 sqlalchemy
+bcrypt
+email-validator
+PyJWT
+python-dotenv
+alembic
+psycopg[binary]

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Date, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -8,6 +8,13 @@ class Property(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True
+    )
+
     name = Column(String, nullable=False)
 
     address = Column(String, nullable=False)
@@ -15,6 +22,11 @@ class Property(Base):
     unit_number = Column(String)
 
     monthly_rent = Column(Float, default=0)
+
+    owner = relationship(
+        "User",
+        back_populates="properties"
+    )
 
     tenants = relationship(
         "Tenant",
@@ -162,4 +174,41 @@ class UtilityBill(Base):
     notes = Column(
         String,
         nullable=True
+    )
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    name = Column(
+        String,
+        nullable=False
+    )
+
+    email = Column(
+        String,
+        nullable=False,
+        unique=True,
+        index=True
+    )
+
+    hashed_password = Column(
+        String,
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime,
+        server_default=func.now(),
+        nullable=False
+    )
+
+    properties = relationship(
+        "Property",
+        back_populates="owner"
     )
